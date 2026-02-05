@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Will you be my Valentine?</title>
+  <meta name="theme-color" content="#ffe6f2" />
+  <style>
+    :root { --bg1:#ffe6f2; --bg2:#fff6fb; --text:#1f1f1f; }
+    * { box-sizing: border-box; }
+    html,body { height:100%; }
+    body{
+      margin:0;
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      color:var(--text);
+      background: radial-gradient(circle at 20% 20%, var(--bg1), var(--bg2));
+      overflow:hidden;
+    }
+    .card{
+      width:min(720px, 92vw);
+      background: rgba(255,255,255,.78);
+      border: 1px solid rgba(0,0,0,.06);
+      border-radius: 22px;
+      padding: 28px 22px;
+      box-shadow: 0 18px 60px rgba(0,0,0,.08);
+      backdrop-filter: blur(10px);
+      text-align:center;
+      position:relative;
+    }
+    h1{
+      margin: 4px 0 10px;
+      font-size: clamp(26px, 4vw, 40px);
+      line-height:1.1;
+    }
+    .sub{
+      margin: 0 0 18px;
+      opacity:.8;
+      font-size: 16px;
+    }
+
+    /* Run area */
+    #btnArea{
+      position: relative;
+      width: min(560px, 92vw);
+      height: 260px;
+      margin: 18px auto 6px;
+      border-radius: 18px;
+      border: 1px dashed rgba(0,0,0,.12);
+      background: rgba(255,255,255,.6);
+      overflow: hidden;
+      display:block;
+    }
+
+    button{
+      border:0;
+      border-radius: 16px;
+      padding: 14px 22px;
+      font-size: 18px;
+      cursor:pointer;
+      user-select:none;
+      transition: transform 220ms ease, opacity 220ms ease, left 220ms ease, top 220ms ease;
+      box-shadow: 0 10px 22px rgba(0,0,0,.10);
+      position:absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%,-50%) scale(1);
+      white-space: nowrap;
+    }
+    #yesBtn{
+      background: #ff4da6;
+      color: white;
+      z-index: 2;
+    }
+    #noBtn{
+      background: #ffffff;
+      color: #222;
+      border: 1px solid rgba(0,0,0,.08);
+      z-index: 1;
+    }
+
+    #message{
+      margin: 12px 0 0;
+      font-size: 18px;
+      min-height: 26px;
+    }
+
+    /* Confetti canvas */
+    #confetti{
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events:none;
+      z-index: 9999;
+      display:none;
+    }
+
+    /* Floating hearts layer */
+    .hearts{
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }
+    .heart{
+      position:absolute;
+      bottom:-40px;
+      font-size: 18px;
+      opacity: .85;
+      animation: floatUp linear forwards;
+      filter: drop-shadow(0 8px 10px rgba(0,0,0,.12));
+      user-select:none;
+    }
+    @keyframes floatUp {
+      0%   { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+      10%  { opacity: .9; }
+      100% { transform: translateY(-120vh) translateX(var(--drift)) rotate(var(--rot)); opacity: 0; }
+    }
+
+    /* Focus styles for accessibility */
+    button:focus {
+      outline: 3px solid rgba(255,77,166,.28);
+      outline-offset: 4px;
+    }
+
+    /* respects user's reduced motion preference */
+    @media (prefers-reduced-motion: reduce) {
+      .heart { animation: none !important; opacity: 0.9; }
+      button { transition: none !important; }
+      #confetti { display:none !important; }
+      .hearts { display:none !important; }
+    }
+
+    /* small screen improvements */
+    @media (max-width:420px) {
+      #btnArea { height: 220px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="hearts" id="hearts" aria-hidden="true"></div>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+
+  <main class="card" role="main" aria-labelledby="title">
+    <h1 id="title">Will you be my Valentine? 💘</h1>
+    <p class="sub">Be honest… but choose wisely 😌</p>
+
+    <div id="btnArea" aria-label="Answer area">
+      <button id="yesBtn" aria-label="Yes, I will be your Valentine">Yes 💖</button>
+      <button id="noBtn" aria-label="No, I won't" title="No" >No 🙈</button>
+    </div>
+
+    <p id="message" role="status" aria-live="polite" aria-atomic="true">“No” seems a bit shy…</p>
+
+    <noscript>
+      <p style="margin-top:12px;color:#6b6b6b">This interactive page requires JavaScript. With JS disabled you'll still see a static message. Try enabling JavaScript or open on a modern browser for full experience.</p>
+    </noscript>
+  </main>
+
+<script>
+(() => {
+  // Respect prefers-reduced-motion
+  const reducedMotionQuery = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+  const prefersReducedMotion = reducedMotionQuery ? reducedMotionQuery.matches : false;
+
+  let noClicks = 0;
+
+  const btnArea = document.getElementById("btnArea");
+  const noBtn   = document.getElementById("noBtn");
+  const yesBtn  = document.getElementById("yesBtn");
+  const message = document.getElementById("message");
+  const heartsLayer = document.getElementById("hearts");
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+  // --- Floating hearts background ---
+  const heartEmojis = ["💖","💘","💝","💕","💗","💓","💞"];
+  let heartInterval = null;
+  function spawnHeart() {
+    if (prefersReducedMotion) return;
+    const el = document.createElement("div");
+    el.className = "heart";
+    el.textContent = heartEmojis[Math.floor(Math.random()*heartEmojis.length)];
+    el.style.left = Math.random() * 100 + "vw";
+    el.style.fontSize = (14 + Math.random()*22).toFixed(0) + "px";
+    el.style.setProperty("--drift", (Math.random()*140 - 70).toFixed(0) + "px");
+    el.style.setProperty("--rot", (Math.random()*80 - 40).toFixed(0) + "deg");
+    const dur = 6 + Math.random()*5;
+    el.style.animationDuration = dur + "s";
+    heartsLayer.appendChild(el);
+    setTimeout(() => el.remove(), (dur + 0.4) * 1000);
+  }
+  if (!prefersReducedMotion) {
+    heartInterval = setInterval(spawnHeart, 450);
+    for (let i=0;i<10;i++) setTimeout(spawnHeart, i*180);
+  }
+
+  // --- Text + button behaviors ---
+  function setAreYouSureText() {
+    if (noClicks === 1) message.textContent = "Are you sure? 🥺";
+    else if (noClicks === 2) message.textContent = "Really sure?? 😭";
+    else if (noClicks === 3) message.textContent = "Last chance… are you sure? 💔";
+    else if (noClicks >= 4) message.textContent = "Okay fine… only YES is left 😌";
+  }
+
+  function growYes() {
+    // base scale grows per No click
+    const scale = 1 + noClicks * 0.28;
+    yesBtn.dataset.baseScale = String(scale);
+    applyYesTransform(0, 0);
+  }
+
+  // "running" No button
+  function moveNoRunAway() {
+    const area = btnArea.getBoundingClientRect();
+    const btnW = noBtn.offsetWidth;
+    const btnH = noBtn.offsetHeight;
+
+    const padding = 10;
+    const maxX = Math.max(0, area.width  - btnW - padding);
+    const maxY = Math.max(0, area.height - btnH - padding);
+
+    const x = clamp(Math.random() * maxX + padding, padding, maxX);
+    const y = clamp(Math.random() * maxY + padding, padding, maxY);
+
+    noBtn.style.left = `${x}px`;
+    noBtn.style.top  = `${y}px`;
+
+    const noScale = Math.max(0.18, 1 - noClicks * 0.22);
+    const tilt = (Math.random() * 14 - 7).toFixed(1);
+    noBtn.style.transform = `translate(0,0) scale(${noScale}) rotate(${tilt}deg)`;
+  }
+
+  // Initialize positions after layout
+  function initPositions() {
+    const area = btnArea.getBoundingClientRect();
+    yesBtn.style.left = `${Math.round(area.width*0.42)}px`;
+    yesBtn.style.top  = `${Math.round(area.height*0.52)}px`;
+    yesBtn.style.transform = `translate(0,0) scale(1)`;
+    yesBtn.dataset.baseScale = "1";
+
+    noBtn.style.left = `${Math.round(area.width*0.62)}px`;
+    noBtn.style.top  = `${Math.round(area.height*0.56)}px`;
+    noBtn.style.transform = `translate(0,0) scale(1)`;
+  }
+
+  // --- YES button magnet (chases pointer) ---
+  let magnetStrength = 0.18;
+  let yesOffsetX = 0;
+  let yesOffsetY = 0;
+
+  function applyYesTransform(offsetX, offsetY) {
+    const baseScale = parseFloat(yesBtn.dataset.baseScale || "1");
+    yesOffsetX = offsetX;
+    yesOffsetY = offsetY;
+    yesBtn.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${baseScale})`;
+  }
+
+  function magnetYesTo(clientX, clientY) {
+    const yesRect = yesBtn.getBoundingClientRect();
+    const yesCenterX = yesRect.left + yesRect.width / 2;
+    const yesCenterY = yesRect.top + yesRect.height / 2;
+
+    const dx = clientX - yesCenterX;
+    const dy = clientY - yesCenterY;
+
+    // move a fraction toward pointer (smooth & cute)
+    const targetX = yesOffsetX + dx * magnetStrength;
+    const targetY = yesOffsetY + dy * magnetStrength;
+
+    // cap offsets so button doesn't fly out
+    const cap = 70 + noClicks * 10;
+    const ox = clamp(targetX, -cap, cap);
+    const oy = clamp(targetY, -cap, cap);
+
+    applyYesTransform(ox, oy);
+  }
+
+  // Only activate magnet effect if pointer is present and not reduced-motion
+  if (!prefersReducedMotion) {
+    btnArea.addEventListener("mousemove", (e) => magnetYesTo(e.clientX, e.clientY));
+    btnArea.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      magnetYesTo(t.clientX, t.clientY);
+    }, { passive: true });
+  }
+
+  // Make No run away when pointer gets close (mouse or touch).
+  // Keep the No button stable for keyboard users — don't react to focus
+  function pointerWillMoveNo(e) {
+    // pointerType may be undefined in some browsers; allow mouse/touch/pen
+    const type = e.pointerType || (e.type === 'touchstart' ? 'touch' : 'mouse');
+    if (type === 'mouse' || type === 'touch' || type === 'pen') {
+      moveNoRunAway();
+    }
+  }
+
+  // Use pointerenter if supported; fall back to mouseenter+touchstart
+  if (window.PointerEvent) {
+    noBtn.addEventListener('pointerenter', pointerWillMoveNo, { passive: true });
+  } else {
+    noBtn.addEventListener("mouseenter", pointerWillMoveNo, { passive: true });
+    noBtn.addEventListener("touchstart", (e) => { e.preventDefault(); pointerWillMoveNo(e); }, { passive: false });
+  }
+
+  // Ensure keyboard focus does NOT trigger fleeing behavior
+  noBtn.addEventListener("focus", () => {
+    // position remains where last set; do not run away on focus so keyboard users can press it.
+    noBtn.style.transform = noBtn.style.transform || 'translate(0,0) scale(1)';
+  });
+
+  noBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    noClicks++;
+
+    setAreYouSureText();
+    growYes();
+
+    // after 3 "are you sure"s, remove "No" (still accessible to assistive tech while fading)
+    if (noClicks >= 4) {
+      noBtn.style.opacity = "0";
+      noBtn.style.pointerEvents = "none";
+      noBtn.setAttribute('aria-hidden', 'true');
+      setTimeout(() => noBtn.remove(), 220);
+      return;
+    }
+
+    moveNoRunAway();
+  });
+
+  // --- Confetti ---
+  const canvas = document.getElementById("confetti");
+  const ctx = canvas.getContext ? canvas.getContext("2d") : null;
+  let pieces = [];
+  let running = false;
+
+  function resize() {
+    if (!ctx) return;
+    canvas.width = innerWidth * devicePixelRatio;
+    canvas.height = innerHeight * devicePixelRatio;
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  }
+  addEventListener("resize", resize);
+
+  function startConfetti() {
+    if (prefersReducedMotion || !ctx) return;
+    canvas.style.display = "block";
+    resize();
+
+    const colors = ['#ff4da6','#ffd166','#ff7ab6','#ffb3c6','#ffe6f0','#ffd6ea'];
+    pieces = Array.from({ length: 240 }, () => ({
+      x: Math.random() * innerWidth,
+      y: -20 - Math.random() * 320,
+      w: 6 + Math.random() * 7,
+      h: 4 + Math.random() * 6,
+      vx: -2 + Math.random() * 4,
+      vy: 2 + Math.random() * 5,
+      r: Math.random() * Math.PI,
+      vr: -0.25 + Math.random() * 0.5,
+      life: 190 + Math.random() * 100,
+      color: colors[Math.floor(Math.random()*colors.length)]
+    }));
+
+    running = true;
+    requestAnimationFrame(tick);
+    setTimeout(() => {
+      running = false;
+      setTimeout(() => (canvas.style.display = "none"), 350);
+    }, 3000);
+  }
+
+  function tick() {
+    if (!running || !ctx) return;
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+
+    pieces.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.r += p.vr; p.life -= 1;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.r);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+      ctx.restore();
+    });
+
+    pieces = pieces.filter(p => p.life > 0 && p.y < innerHeight + 60);
+    if (pieces.length) requestAnimationFrame(tick);
+  }
+
+  // --- Vibration ---
+  function vibrate(ms) {
+    if (prefersReducedMotion) return;
+    if (navigator.vibrate) navigator.vibrate(ms);
+  }
+
+  // Typewriter message after YES
+  function typeText(text, speed=45) {
+    message.textContent = "";
+    let i = 0;
+    const timer = setInterval(() => {
+      message.textContent += text[i++];
+      if (i >= text.length) clearInterval(timer);
+    }, speed);
+  }
+
+  yesBtn.addEventListener("click", () => {
+    startConfetti();
+    vibrate(60);
+    setTimeout(() => vibrate(40), 120);
+
+    typeText("I knew you’d say yes ❤️", 45);
+
+    // Optional redirect after a moment:
+    // setTimeout(() => { window.location.href = "https://example.com"; }, 2200);
+  });
+
+  // Allow keyboard activation (Enter/Space) for both buttons - buttons already support this natively,
+  // but we ensure the "No" button doesn't flee on keyboard focus.
+  // Initial setup should run after layout
+  requestAnimationFrame(() => {
+    initPositions();
+    // make the No button take an initial random offset so it doesn't overlap Yes
+    moveNoRunAway();
+  });
+
+})();
+</script>
+</body>
+</html>
